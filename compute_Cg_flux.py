@@ -4,7 +4,7 @@ from diffusers import DiffusionPipeline
 import os
 import pandas as pd
 
-def compute_and_save_Ce_flux(
+def compute_and_save_Cg_flux(
     model_id,
     save_dir=".",
     dataset_path="coco_30k.csv",
