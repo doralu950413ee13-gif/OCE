@@ -1,0 +1,7 @@
+__pycache__/
+*.pyc
+demo_results/
+*.safetensors
+Cg.pt
+Cg_clip.pt
+Cg_t5.pt

@@ -101,8 +101,6 @@ def Orthogonal_Erase(pipe, edit_concepts, guide_concepts, preserve_concepts,
 
         E_star = build_guide_subspace(W0, guide_embs)      # (out_dim, r_guide)
 
-        P = build_preserve_subspace(W0, preserve_embs)     # (out_dim, s)
-
         # === (2) build M_total ===
         M_total = torch.zeros(out_dim, out_dim, device=device, dtype=torch_dtype)
         G_star = E_star @ E_star.T

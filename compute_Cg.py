@@ -117,7 +117,7 @@ C_e = compute_and_save_second_moment(
     text_encoder,
     tokenizer,
     save_path="Cg.pt",
-    dataset_path="coco_30k.csv"
+    dataset_path="coco_30k.csv",
     sample_size=60000000,
     batch_size=64, 
     device="cuda",
