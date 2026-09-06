@@ -4,7 +4,6 @@ import argparse
 import os
 import copy
 import time
-import random
 from safetensors.torch import save_file
 from diffusers import DiffusionPipeline
 from safetensors.torch import load_file
@@ -38,24 +37,6 @@ def build_preserve_subspace(W0, preserve_embs, eps=1e-8):
     P = torch.stack(V, dim=1)
     P_orth, _ = torch.linalg.qr(P, mode="reduced")
     return P_orth
-
-def align_guides_with_edits(edit_concepts, guide_concepts, seed=None):
-    if seed is not None:
-        random.seed(seed)
-
-    n_edit = len(edit_concepts)
-    n_guide = len(guide_concepts)
-
-    if n_guide == 0:
-        raise ValueError("no guide_concepts")
-
-    if n_guide < n_edit:
-        extra = random.choices(guide_concepts, k=n_edit - n_guide)
-        guide_concepts = guide_concepts + extra
-    elif n_guide > n_edit:
-        guide_concepts = guide_concepts[:n_edit]
-
-    return guide_concepts
 
 def Orthogonal_Erase(pipe, edit_concepts, guide_concepts, preserve_concepts,
                         erase_scale, preserve_scale, preserve_scale_2,
@@ -184,13 +165,14 @@ if __name__ == '__main__':
     else:
         guide_concepts = [concept.strip() for concept in guide_concepts.split(';') if concept.strip()!='']
 
-        
-    if len(guide_concepts) != len(edit_concepts):
-        guide_concepts = align_guides_with_edits(
-            edit_concepts,
-            guide_concepts,
-            seed=42
-        )
+    # guide_concepts is used as-is, with no length-matching against
+    # edit_concepts: Orthogonal_Erase pools all guide embeddings into one
+    # shared subspace (build_guide_subspace), so passing more guide_concepts
+    # than edit_concepts is exactly how a one-to-many erase (e.g. one edit
+    # concept redirected into a subspace spanned by several guide concepts)
+    # is expressed. An earlier version truncated/padded guide_concepts to
+    # match len(edit_concepts) one-to-one; that silently dropped any extra
+    # guide concepts and must not be reintroduced.
 
     if args.preserve_concepts is None:
         preserve_concepts = []
@@ -198,34 +180,42 @@ if __name__ == '__main__':
         preserve_concepts = [concept.strip() for concept in args.preserve_concepts.split(';') if concept.strip()!='']
 
     if expand_prompts == 'true':
+        # Expand edit_concepts and guide_concepts independently rather than
+        # zip()-pairing them: zip() truncates to the shorter list, which
+        # would silently drop the expanded phrasing for any guide concept
+        # beyond len(edit_concepts) in a one-to-many setup (e.g. "sky" would
+        # get expanded but "cloud"/"field" would not).
         edit_concepts_ = copy.deepcopy(edit_concepts)
         guide_concepts_ = copy.deepcopy(guide_concepts)
 
-        for concept, guide_concept in zip(edit_concepts_, guide_concepts_):
+        for concept in edit_concepts_:
             if concept_type == 'art':
                 extra_e = [f'painting by {concept}',
                            f'art by {concept}',
                            f'artwork by {concept}',
                            f'picture by {concept}',
                            f'style of {concept}']
-                extra_g = [f'painting by {guide_concept}',
-                           f'art by {guide_concept}',
-                           f'artwork by {guide_concept}',
-                           f'picture by {guide_concept}',
-                           f'style of {guide_concept}']
             else:
                 extra_e = [f'image of {concept}',
                            f'photo of {concept}',
                            f'portrait of {concept}',
                            f'picture of {concept}',
                            f'painting of {concept}']
+            edit_concepts.extend(extra_e)
+
+        for guide_concept in guide_concepts_:
+            if concept_type == 'art':
+                extra_g = [f'painting by {guide_concept}',
+                           f'art by {guide_concept}',
+                           f'artwork by {guide_concept}',
+                           f'picture by {guide_concept}',
+                           f'style of {guide_concept}']
+            else:
                 extra_g = [f'image of {guide_concept}',
                            f'photo of {guide_concept}',
                            f'portrait of {guide_concept}',
                            f'picture of {guide_concept}',
                            f'painting of {guide_concept}']
-
-            edit_concepts.extend(extra_e)
             guide_concepts.extend(extra_g)
 
     print(f"\n\nErasing: {edit_concepts}\n")

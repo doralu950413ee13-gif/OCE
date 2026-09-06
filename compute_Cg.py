@@ -1,5 +1,5 @@
+import argparse
 import torch
-from datasets import load_dataset
 from tqdm import tqdm
 from diffusers import DiffusionPipeline
 import os
@@ -30,13 +30,12 @@ def compute_and_save_second_moment(
     # dataset
     ds = pd.read_csv(dataset_path)
     ds = ds['prompt']
-    #ds = load_dataset(dataset_path)
-    #ds = ds["train"]
 
     text_encoder.to(device)
     text_encoder.eval()
 
     # ========= MAIN GPU BATCH LOOP =========
+    last_checkpoint = count // 20000
     batch_texts = []
     for item in tqdm(ds, desc="Collecting hidden states"):
 
@@ -82,7 +81,8 @@ def compute_and_save_second_moment(
         batch_texts = []
 
         # periodic checkpoint
-        if count % 20000 == 0:
+        if count // 20000 > last_checkpoint:
+            last_checkpoint = count // 20000
             torch.save({"C": C, "count": count}, save_path)
             print(f"[Checkpoint] saved {count} tokens -> {save_path}")
 
@@ -102,23 +102,33 @@ def compute_and_save_second_moment(
 
 # ================= RUN ====================
 
-torch_dtype = torch.float32
-pipe = DiffusionPipeline.from_pretrained(
-    "/model/stable-diffusion-v1-4/",
-    torch_dtype=torch_dtype,
-    safety_checker=None,
-    vae=None
-).to("cuda")
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--dataset_path", type=str, default="data/coco_30k.csv")
+    parser.add_argument("--sample_size", type=int, default=600000,
+                         help="cap on tokens accumulated into C_g; lower this for a fast/reduced-scope local pass")
+    parser.add_argument("--batch_size", type=int, default=64)
+    parser.add_argument("--save_path", type=str, default="Cg.pt")
+    args = parser.parse_args()
 
-text_encoder = pipe.text_encoder
-tokenizer = pipe.tokenizer
+    device = "cuda" if torch.cuda.is_available() else "cpu"
+    torch_dtype = torch.float32
+    pipe = DiffusionPipeline.from_pretrained(
+        "CompVis/stable-diffusion-v1-4",
+        torch_dtype=torch_dtype,
+        safety_checker=None,
+        vae=None
+    ).to(device)
 
-C_e = compute_and_save_second_moment(
-    text_encoder,
-    tokenizer,
-    save_path="Cg.pt",
-    dataset_path="coco_30k.csv",
-    sample_size=60000000,
-    batch_size=64, 
-    device="cuda",
-)
+    text_encoder = pipe.text_encoder
+    tokenizer = pipe.tokenizer
+
+    C_e = compute_and_save_second_moment(
+        text_encoder,
+        tokenizer,
+        save_path=args.save_path,
+        dataset_path=args.dataset_path,
+        sample_size=args.sample_size,
+        batch_size=args.batch_size,
+        device=device,
+    )
