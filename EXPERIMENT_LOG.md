@@ -1,4 +1,4 @@
-# OCE 論文重現實驗紀錄（2026-09-06 ~ 2026-09-07）
+# OCE 論文重現實驗紀錄（2026-09-06 ~ 2026-09-08）
 
 分支：`experiment/paper-reproduction`（程式碼與 `main` 完全一致，0 commits diff）；本檔案與 CSV 結果放在獨立的 `experiment/paper-reproduction-results` 分支上，避免大量二進位圖片污染程式碼分支。
 
@@ -28,17 +28,19 @@
 2. `evalscripts/generate_i2p.sh` 傳給 `generate_nsfw.py` 的參數名是 `--uce_model_path`，但該腳本實際定義的是 `--oce_model_path`，會直接報 `unrecognized arguments`。
 3. `data/nudity.csv` 部分 prompt 超過 CLIP 77-token 上限，`metrics/eval_clip_score.py` 沒做截斷會直接 crash → 另存一份 CLIP-tokenizer 截斷過的 `data/nudity_truncated.csv` 餵給它。
 
-**量化結果**：
+**量化結果**（2026-09-08 已補跑到完整 3000 張/model，取代先前 831 張抽樣的初版數字）：
 
-| 模型 | COCO CLIP score（831張抽樣） | FID vs baseline |
+| 模型 | COCO CLIP score（3000張，完整規模） | FID vs baseline（3000張，完整規模） |
 |---|---:|---:|
 | baseline（未編輯） | 31.37 | – |
-| object | 30.84 | 61.85 |
-| style | 31.27 | 57.82 |
-| nudity | 30.77 | 62.31 |
-| celeb_10 | 31.22 | 58.84 |
-| celeb_50 | 30.90 | 62.02 |
-| celeb_100 | 30.56 | 63.92 |
+| object | 31.19 | 13.59 |
+| style | 31.39 | 10.36 |
+| nudity | 30.91 | 18.29 |
+| celeb_10 | 31.36 | 11.77 |
+| celeb_50 | 31.12 | 16.30 |
+| celeb_100 | 30.71 | 18.31 |
+
+**方法論發現**：先前用 831 張抽樣算出的 FID（61.85 ~ 63.92）比完整 3000 張算出的（10.36 ~ 18.31）高了 **3.4x ~ 5.6x**，證實 FID 在小樣本下有嚴重的正向偏誤（估計器對樣本數敏感，樣本越少偏誤越大），CLIP score 則幾乎不受影響（差距 <0.5 分）。這代表小樣本 FID 數字方向可以參考排序趨勢，但絕對數值不可信，往後做類似量化評估時應優先確保 FID 用足量樣本計算。celeb_10→50→100 隨規模惡化的趨勢在完整規模下依然成立（11.77→16.30→18.31）。
 
 - **Object 抹除**：CLIP zero-shot 分類下 `airplane` 類別平均機率 0.144（對照組 `cat` 仍 0.994），抹除精準且未傷及無關類別。
 - **Nudity**：NudeNet 偵測 142 張圖仍有 16 張（11.3%）判定含裸露內容，抹除不完全。
@@ -55,7 +57,7 @@
 ## 還沒做的部分（本次刻意跳過，皆已與使用者確認）
 - **`eval_celeb.py`（GCD 名人辨識器）**：需要獨立 Python 3.6 環境、手動從 OneDrive 下載模型權重、patch numpy bug，無法在目前 venv 自動化，改用 `attack_prompts.py` 的 CLIP-leakage 方法取代。
 - **FLUX 實驗（`flux_demo.sh`）**：`black-forest-labs/FLUX.1-dev` 是 HuggingFace gated model，需要使用者自行網頁授權＋提供 token，本次未做。
-- **COCO preservation 檢查未跑滿全部規模**：受限於原訂 8 小時預算，6 個訓練後模型的 COCO 檢查只各抽樣 831 張（`--till_case 8500`），而非論文的完整 3000 張／model；baseline 已跑滿 3000 張。由於實際只花了 3h44m（遠低於 8 小時預算），若需要更貼近論文的完整規模，可以再補跑這 6×(3000-831)≈13,000 張。
+- ~~COCO preservation 檢查未跑滿全部規模~~ **已於 2026-09-08 補跑完成**：6 個訓練後模型皆已補到完整 3000 張／model，數字已更新到上方表格（見「方法論發現」，小樣本 FID 偏誤達 3.4x-5.6x）。
 - 所有生成圖片（約 6.3GB）**未 commit** 進 git，僅保留在本地工作目錄（`eval_cifar_airplane/`、`eval_final_Van Gogh/`、`eval_nudity/`、`celeb_celeb_*/`、`coco_eval/` 等），此分支只保留 CSV 數據與本記錄檔。
 
 ## 本分支包含的檔案
