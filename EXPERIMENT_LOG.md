@@ -1,0 +1,66 @@
+# OCE 論文重現實驗紀錄（2026-09-06 ~ 2026-09-07）
+
+分支：`experiment/paper-reproduction`（程式碼與 `main` 完全一致，0 commits diff）；本檔案與 CSV 結果放在獨立的 `experiment/paper-reproduction-results` 分支上，避免大量二進位圖片污染程式碼分支。
+
+## 環境
+- `.venv`：Python 3.12（`uv venv --python 3.12`），因系統預設 Python 3.14 缺 pip/wheel 支援而改用。
+- `requirements.txt` 的 `transformers>=4.48.0` 在裝到 5.x 時會跟 `diffusers==0.33.1` 不相容（`ImportError: FLAX_WEIGHTS_NAME`），手動鎖在 `transformers==4.49.0`。
+- GPU：RTX 5090 32GB，torch 2.14.0+cu130。
+
+## 做了什麼
+
+### 1. 最小 smoke test（object: airplane→sky）
+驗證 `compute_Cg.py` → `oce.py` → `generate_object.py` → `attack_prompts.py` 整條 pipeline 可跑通。
+
+### 2. celeb_10 leakage 分析
+用完整 COCO caption 重算 `Cg.pt`，訓練 `celeb_10`（10 位名人→person/woman/man），用 `attack_prompts.py` 對 10 個 (celeb, "person") pair 跑 9 種 discrete-prompt 攻擊，找出 CLIP-leakage 最高的失敗案例。
+
+### 3. one-to-many 功能合併
+把 `feature/one-to-many-unlearning` merge 進 `main`（merge commit `224d3a5`），解掉 `compute_Cg.py` 唯一的衝突（保留 argparse CLI 版本）。
+
+### 4. 論文原始 6 組基準實驗完整重現（本次主要工作，`experiment/paper-reproduction` 分支）
+訓練 + 完整 evalscripts 規模生成 + 量化 metrics，涵蓋：`object`（airplane→sky）、`style`（Van Gogh→real）、`nudity`、`celeb_10`、`celeb_50`、`celeb_100`。
+
+**規模**：約 14,687 張生成圖（cifar10 2000 + style 900 + nudity 142 + celeb 官方圖 2300 + celeb leakage 攻擊 1350 + COCO baseline 3000 + COCO 6模型×~831 partial ≈ 4986）。原估計需 8 小時，實際 **約 3 小時 44 分鐘**完成。
+
+**過程中發現並繞過的 3 個 repo bug**（未修改原始程式檔案，只在呼叫方式上避開）：
+1. `generate_object.py` 單次 `num_images_per_prompt=200` 時 VAE decode 在 32GB GPU 上 OOM（需要 ~35GB）→ 改用外部腳本分批（25 張/批）生成再合併檔名。
+2. `evalscripts/generate_i2p.sh` 傳給 `generate_nsfw.py` 的參數名是 `--uce_model_path`，但該腳本實際定義的是 `--oce_model_path`，會直接報 `unrecognized arguments`。
+3. `data/nudity.csv` 部分 prompt 超過 CLIP 77-token 上限，`metrics/eval_clip_score.py` 沒做截斷會直接 crash → 另存一份 CLIP-tokenizer 截斷過的 `data/nudity_truncated.csv` 餵給它。
+
+**量化結果**：
+
+| 模型 | COCO CLIP score（831張抽樣） | FID vs baseline |
+|---|---:|---:|
+| baseline（未編輯） | 31.37 | – |
+| object | 30.84 | 61.85 |
+| style | 31.27 | 57.82 |
+| nudity | 30.77 | 62.31 |
+| celeb_10 | 31.22 | 58.84 |
+| celeb_50 | 30.90 | 62.02 |
+| celeb_100 | 30.56 | 63.92 |
+
+- **Object 抹除**：CLIP zero-shot 分類下 `airplane` 類別平均機率 0.144（對照組 `cat` 仍 0.994），抹除精準且未傷及無關類別。
+- **Nudity**：NudeNet 偵測 142 張圖仍有 16 張（11.3%）判定含裸露內容，抹除不完全。
+- **Celeb leakage**（`attack_prompts.py` 9 種攻擊 × 全部名人）：
+
+  | 規模 | leakage>0 比例 | 平均 leakage | 最嚴重單一案例 |
+  |---|---:|---:|---|
+  | celeb_10 | 36% (32/90) | -1.62 | Anjelica Huston / boundary_hybrid (+8.75) |
+  | celeb_50 | 30% (135/450) | -2.47 | Amy Adams / weight_target_up_anchor_down (+18.4) |
+  | celeb_100 | 34% (305/900) | -2.15 | Nicole Kidman / direct_target (+15.4) |
+
+  規模變大後，最嚴重的個別洩漏案例反而更嚴重（celeb_10 最高 8.75，celeb_50/100 達 15-18），代表同時抹除大量名人時會有少數特別頑固的個體。
+
+## 還沒做的部分（本次刻意跳過，皆已與使用者確認）
+- **`eval_celeb.py`（GCD 名人辨識器）**：需要獨立 Python 3.6 環境、手動從 OneDrive 下載模型權重、patch numpy bug，無法在目前 venv 自動化，改用 `attack_prompts.py` 的 CLIP-leakage 方法取代。
+- **FLUX 實驗（`flux_demo.sh`）**：`black-forest-labs/FLUX.1-dev` 是 HuggingFace gated model，需要使用者自行網頁授權＋提供 token，本次未做。
+- **COCO preservation 檢查未跑滿全部規模**：受限於原訂 8 小時預算，6 個訓練後模型的 COCO 檢查只各抽樣 831 張（`--till_case 8500`），而非論文的完整 3000 張／model；baseline 已跑滿 3000 張。由於實際只花了 3h44m（遠低於 8 小時預算），若需要更貼近論文的完整規模，可以再補跑這 6×(3000-831)≈13,000 張。
+- 所有生成圖片（約 6.3GB）**未 commit** 進 git，僅保留在本地工作目錄（`eval_cifar_airplane/`、`eval_final_Van Gogh/`、`eval_nudity/`、`celeb_celeb_*/`、`coco_eval/` 等），此分支只保留 CSV 數據與本記錄檔。
+
+## 本分支包含的檔案
+- `EXPERIMENT_LOG.md`（本檔案）
+- `pairs.csv` / `pairs_50.csv` / `pairs_100.csv`：celeb leakage 攻擊用的 target/anchor 對照表
+- `celeb10_attack_out/results.csv` / `celeb50_attack_out/results.csv` / `celeb100_attack_out/results.csv`：完整 leakage 掃描原始數據
+- `data/coco_30k_val_partial.csv`：COCO preservation 部分抽樣用的 prompt 子集
+- `data/nudity_truncated.csv`：CLIP-token 截斷過的 nudity prompt（供 `eval_clip_score.py` 使用）
