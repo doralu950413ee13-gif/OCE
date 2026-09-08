@@ -43,6 +43,34 @@
 **方法論發現**：先前用 831 張抽樣算出的 FID（61.85 ~ 63.92）比完整 3000 張算出的（10.36 ~ 18.31）高了 **3.4x ~ 5.6x**，證實 FID 在小樣本下有嚴重的正向偏誤（估計器對樣本數敏感，樣本越少偏誤越大），CLIP score 則幾乎不受影響（差距 <0.5 分）。這代表小樣本 FID 數字方向可以參考排序趨勢，但絕對數值不可信，往後做類似量化評估時應優先確保 FID 用足量樣本計算。celeb_10→50→100 隨規模惡化的趨勢在完整規模下依然成立（11.77→16.30→18.31）。
 
 - **Object 抹除**：CLIP zero-shot 分類下 `airplane` 類別平均機率 0.144（對照組 `cat` 仍 0.994），抹除精準且未傷及無關類別。
+
+### 5. 補完 CIFAR-10 物件抹除，重現論文 Table 1/8（2026-09-08）
+翻論文 PDF 才發現：原本的 `object` 實驗只訓練了 `trainscripts/object.sh` 內建的 **airplane→sky 一個模型**，不是論文 Table 1/8 的完整方法——論文 **Table 7**（page 14）定義了 CIFAR-10 十個類別**各自**對應的 anchor（訓練 10 個獨立模型），其中 **Cat↔Dog 互為 anchor**（Figure 5，page 19，就是使用者問的「狗變貓」）：
+
+| Class | Airplane | Automobile | Bird | Cat | Deer | Dog | Frog | Horse | Ship | Truck |
+|---|---|---|---|---|---|---|---|---|---|---|
+| Anchor | Sky | Truck | Cat | Dog | Horse | Cat | Bird | Deer | Airplane | Ship |
+
+於是補訓練另外 9 個模型（沿用 `trainscripts/object.sh` 的超參數 `erase_scale=2000, preserve_global_scale=10, preserve_concept_scale=0, lamb=10`，只換 edit/guide concept），每個模型生成全部 10 類 × 200 張圖（airplane 模型複用既有圖），共 20,000 張圖，寫一支新腳本算 CLIP top-1 分類，重現論文的 Acc_e/Acc_s/H_o 指標：
+
+| 模型 | Acc_e ↓ | Acc_s ↑ | H_o ↑ |
+|---|---:|---:|---:|
+| cat→dog | 0.00 | 100.00 | **100.00** |
+| deer→horse | 0.00 | 100.00 | 100.00 |
+| dog→cat | 2.50 | 100.00 | 98.73 |
+| horse→deer | 1.50 | 100.00 | 99.24 |
+| frog→bird | 7.00 | 100.00 | 96.37 |
+| truck→ship | 11.50 | 100.00 | 93.90 |
+| ship→airplane | 13.00 | 99.89 | 93.00 |
+| bird→cat | 13.50 | 100.00 | 92.76 |
+| airplane→sky | 17.50 | 100.00 | 90.41 |
+| automobile→truck | 65.00 | 100.00 | 51.85（異常值） |
+| **平均** | **13.15** | **99.99** | **91.63** |
+| 論文 Table 1「Ours」平均 | 6.89 | 98.68 | 97.01 |
+
+方向一致（低 Acc_e、高 Acc_s），但平均 H_o 比論文略低，主要被 `automobile→truck` 這個異常值拖累（erasure 幾乎沒生效）；其餘 9 個模型（包含 cat↔dog 這組）都表現優異，多個甚至達到 Acc_e=0%。推測原因：這次沿用的是 repo `trainscripts/object.sh` 內建的超參數，跟論文 Appendix C.1 報告的 λe=1000/λ0=50/λr=1 不同（repo 用 erase_scale=2000/preserve_global_scale=10/lamb=10），**固定同一組超參數對不同 erase-anchor pair 的效果差異很大**，這是論文沒有明說、需要 per-pair 調參的一個實務細節。
+
+原始資料：`cifar10_table1_results.csv`。
 - **Nudity**：NudeNet 偵測 142 張圖仍有 16 張（11.3%）判定含裸露內容，抹除不完全。
 - **Celeb leakage**（`attack_prompts.py` 9 種攻擊 × 全部名人）：
 
