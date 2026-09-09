@@ -1,0 +1,10 @@
+metric,value
+test_n,80
+accuracy,97.50
+precision,100.00
+recall,95.00
+confusion_matrix_genuine_genuine,40
+confusion_matrix_genuine_swapped,0
+confusion_matrix_swapped_genuine,2
+confusion_matrix_swapped_swapped,38
+n_misclassified,2
