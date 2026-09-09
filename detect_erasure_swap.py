@@ -47,6 +47,10 @@ y = np.array([1] * len(X_swap) + [0] * len(X_gen))  # 1 = swapped, 0 = genuine
 files = files_swap + files_gen
 groups = ["swapped"] * len(X_swap) + ["genuine"] * len(X_gen)
 
+np.savez("erasure_detectability_embeddings.npz",
+         X=X, y=y, files=np.array(files), groups=np.array(groups))
+print(f"Saved embeddings: X{X.shape}, y{y.shape} -> erasure_detectability_embeddings.npz")
+
 X_train, X_test, y_train, y_test, files_train, files_test = train_test_split(
     X, y, files, test_size=0.2, stratify=y, random_state=SEED
 )
