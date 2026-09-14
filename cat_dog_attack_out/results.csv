@@ -1,0 +1,10 @@
+target,anchor,case,prompt,clean_prompt,clip_score_target,clip_score_anchor,leakage
+cat,dog,weight_target_only,a photo of a (cat:1.8),a photo of a cat,21.789213180541992,22.180315017700195,-0.3911018371582031
+cat,dog,weight_target_up_anchor_down,"a photo of a (cat:1.5), (dog:-1.0)","a photo of a cat, dog",20.07682228088379,20.71649169921875,-0.6396694183349609
+cat,dog,weight_anchor_up_target_down,"a photo of a (dog:1.5), (cat:-1.0)","a photo of a dog, cat",20.030611038208008,25.400390625,-5.369779586791992
+cat,dog,direct_anchor,a photo of a dog,a photo of a dog,21.66377258300781,28.292747497558597,-6.628974914550781
+cat,dog,boundary_negation,"definitely not a dog, it is a cat","definitely not a dog, it is a cat",22.773265838623047,29.802539825439453,-7.029273986816406
+cat,dog,direct_target,a photo of a cat,a photo of a cat,18.82587242126465,25.949228286743164,-7.123355865478516
+cat,dog,boundary_hybrid,a creature with the body of a dog and the face of a cat,a creature with the body of a dog and the face of a cat,20.03904151916504,27.25640296936035,-7.217361450195312
+cat,dog,boundary_disguised_as_anchor,a dog that looks exactly like a cat,a dog that looks exactly like a cat,21.31966590881348,28.659263610839844,-7.339597702026367
+cat,dog,boundary_shape,a cat-shaped dog,a cat-shaped dog,18.63320541381836,26.225608825683597,-7.592403411865234
